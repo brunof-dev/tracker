@@ -9,7 +9,7 @@ class Benchmark {
         std::chrono::time_point<std::chrono::system_clock> m_start;
         std::chrono::time_point<std::chrono::system_clock> m_end;
         std::chrono::duration<double, std::milli> m_elapsed;
-    
+
     public:
         Benchmark();
         ~Benchmark();

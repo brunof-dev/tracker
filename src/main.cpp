@@ -51,9 +51,11 @@ int main() {
 
     // INFERENCE LOOP
     /*************************************************************************/
-    cv::VideoCapture cap = cv::VideoCapture(model::INPUT_VID);
-    cv::Mat frame_data, old_frame_data, net_data;
     InferenceEngine::InferRequest infer_req = exec_net.CreateInferRequest();
+    cv::VideoCapture cap = cv::VideoCapture(model::INPUT_VID);
+    std::vector<std::vector<BdBox>> bd_box_stack;
+    cv::Mat frame_data, net_data;
+    std::vector<Person> person_vec;
     Benchmark benchmark;
     bool rc = false;
     uint32_t frame_num = 0;
@@ -92,33 +94,28 @@ int main() {
         benchmark.start();
         InferenceEngine::Blob::Ptr output_blob = infer_req.GetBlob(model::OUTPUT_BLOB);
         std::vector<BdBox> bd_box_vec;
-        common::getBdBox(bd_box_vec, output_blob, frame_width, frame_height);
+        common::getBdBox(output_blob, frame_width, frame_height, frame_num, bd_box_vec);
         common::nonMaxSup(bd_box_vec);
         benchmark.end("filter");
         /*************************************************************************/
 
         // Assign ID
         /*************************************************************************/
-        /*************************************************************************/
-
-        // Update counting
-        /*************************************************************************/
+        benchmark.start();
+        common::assignID(bd_box_vec, bd_box_stack, frame_num, person_vec);
+        common::FIFO(bd_box_vec, bd_box_stack);
+        benchmark.end("assign");
         /*************************************************************************/
 
         // Show/store results
         /*************************************************************************/
         benchmark.start();
-        for (std::vector<BdBox>::iterator it = bd_box_vec.begin(); it != bd_box_vec.end(); it++) {
-            cv::rectangle(frame_data, cv::Point2f(it->xmin, it->ymin), cv::Point2f(it->xmax, it->ymax),
-                          cv::Scalar(232, 35, 244));
-        }
-        cv::imshow("Tracker", frame_data);
-        cv::waitKey(9);
+        common::show(person_vec, frame_data, frame_num);
         benchmark.end("show");
         /*************************************************************************/
 
+        std::cout << "frame: " << frame_num << std::endl;
         frame_num++;
-        old_frame_data = frame_data;
     }
     std::cout << "End of program..." << std::endl;
     /*************************************************************************/

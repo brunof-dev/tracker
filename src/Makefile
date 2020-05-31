@@ -16,7 +16,7 @@ LFLAGS 	:= -lstdc++ -L$(IE_LIB_DIR) -linference_engine -L$(NGRAPH_LIB_DIR) -lngr
 		   -lopencv_core -lopencv_imgcodecs -lopencv_imgproc -lopencv_videoio -lopencv_highgui
 
 TARGET 	:= main
-OBJ 	:= main.o common.o benchmark.o
+OBJ 	:= main.o common.o benchmark.o person.o bd_box.o
 
 .PHONY 	:= all clean
 
