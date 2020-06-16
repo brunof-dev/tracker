@@ -6,6 +6,6 @@
 #include <opencv2/opencv.hpp>
 
 // Local modules
-#include "common.h"
 #include "benchmark.h"
-#include "person.h"
+#include "common.h"
+#include "model.h"

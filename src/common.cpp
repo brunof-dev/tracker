@@ -106,10 +106,37 @@ void common::nonMaxSup(std::vector<BdBox>& bd_box_vec) {
     }
 }
 
-void common::FIFO(const std::vector<BdBox>& bd_box_vec, std::vector<std::vector<BdBox>>& bd_box_stack) {
-    bd_box_stack.insert(bd_box_stack.begin(), bd_box_vec);
-    if (bd_box_stack.size() > threshold::STACK) {
-        bd_box_stack.pop_back();
+void common::getHOG(std::vector<BdBox>& bd_box_vec, cv::Mat img_data, const cv::HOGDescriptor& hog_handler) {
+    for (std::vector<BdBox>::iterator it = bd_box_vec.begin(); it != bd_box_vec.end(); it++) {
+        // Crop bounding box
+        cv::Mat crop_data(img_data, cv::Rect(cv::Point2i(it->xmin, it->ymin), cv::Point2i(it->xmax, it->ymax)));
+
+        // Resize
+        cv::resize(crop_data, crop_data, hog_handler.winSize);
+
+        // Compute HOG descriptor
+        hog_handler.compute(crop_data, it->hogd);
+    }
+}
+
+void common::getORB(std::vector<BdBox>& bd_box_vec, cv::Mat img_data, cv::Ptr<cv::ORB> orb_handler) {
+    for (std::vector<BdBox>::iterator it = bd_box_vec.begin(); it != bd_box_vec.end(); it++) {
+        // Crop bounding box
+        cv::Mat crop_data(img_data, cv::Rect(cv::Point2i(it->xmin, it->ymin), cv::Point2i(it->xmax, it->ymax)));
+        cv::Mat orig_data = crop_data.clone();
+
+        // Resize
+        cv::resize(crop_data, crop_data, cv::Size(120, 240));
+
+        // Compute SIFT descriptor
+        std::vector<cv::KeyPoint> keypoints;
+        orb_handler->detectAndCompute(crop_data, cv::noArray(), keypoints, it->orbd);
+
+        // Exclude very small bounding boxes (yield no keypoints and hence no ORB descriptor)
+        if (it->orbd.empty()) {
+            it = bd_box_vec.erase(it);
+            it--;
+        }
     }
 }
 
@@ -125,21 +152,75 @@ uint32_t common::distance(const BdBox& a, const BdBox& b) {
     return(dist);
 }
 
+float common::distance(const std::vector<float>& a, const std::vector<float>& b) {
+    float dist = 0.0f;
+    for (size_t i = 0; i < a.size(); i++) dist += (a.at(i) - b.at(i)) * (a.at(i) - b.at(i));
+    return(dist);
+}
+
+float common::distance(const cv::Mat& a, const cv::Mat& b) {
+    const uint16_t row_max = std::min(a.rows, b.rows);
+    double dist = 0.0;
+    for (uint16_t i = 0; i < row_max; i++) {
+        dist += cv::norm(a.row(i), b.row(i), cv::NormTypes::NORM_HAMMING);
+    }
+    return(static_cast<float>(dist));
+}
+
 void common::findNeighbour(const BdBox& bd_box, const std::vector<BdBox>& bd_box_vec, BdBox& neighbour) {
-    uint32_t dist, best_dist;
+    uint32_t best_dist;
     for (std::vector<BdBox>::const_iterator it = bd_box_vec.cbegin(); it != bd_box_vec.cend(); it++) {
         // Distance between boxes
-        dist = distance(bd_box, *it);
+        uint32_t dist = distance(bd_box, *it);
+        bool found = false;
         if (it == bd_box_vec.begin()) {
             best_dist = dist;
+            found = true;
         }
         else if (dist < best_dist) {
             best_dist = dist;
-            // Max person speed threshold
-            if (best_dist < threshold::DIST) {
-                neighbour = *it;
-            }
+            found = true;
         }
+        // Max person speed threshold
+        if ((best_dist < threshold::DIST) && (found == true)) neighbour = *it;
+    }
+}
+
+void common::findNbVec(const BdBox& bd_box, const std::vector<BdBox>& bd_box_vec, std::vector<BdBox>& nb_vec) {
+    uint32_t best_dist;
+    for (std::vector<BdBox>::const_iterator it = bd_box_vec.cbegin(); it != bd_box_vec.cend(); it++) {
+        // Distance between boxes
+        uint32_t dist = distance(bd_box, *it);
+        bool found = false;
+        if (it == bd_box_vec.begin()) {
+            best_dist = dist;
+            found = true;
+        }
+        else if (dist < best_dist) {
+            best_dist = dist;
+            found = true;
+        }
+        // Max person speed threshold
+        if ((best_dist < threshold::DIST) && (found == true)) nb_vec.push_back(*it);
+    }
+}
+
+void common::matchNbVec(const BdBox& bd_box, const std::vector<BdBox>& nb_vec, BdBox& neighbour) {
+    float best_dist;
+    for (std::vector<BdBox>::const_iterator it = nb_vec.cbegin(); it != nb_vec.cend(); it++) {
+        // Distance between descriptors
+        float dist = distance(bd_box.hogd, it->hogd);
+        // float dist = distance(bd_box.orbd, it->orbd);
+        bool found = false;
+        if (it == nb_vec.begin()) {
+            best_dist = dist;
+            found = true;
+        }
+        else if (dist < best_dist) {
+            best_dist = dist;
+            found = true;
+        }
+        if (found == true) neighbour = *it;
     }
 }
 
@@ -149,57 +230,71 @@ void common::assignID(std::vector<BdBox>& bd_box_vec, const std::vector<std::vec
     for (std::vector<BdBox>::iterator i = bd_box_vec.begin(); i != bd_box_vec.end(); i++) {
         // Dummy bounding box in case no neighbour is found
         BdBox dummy;
-        dummy.conf = -1.0; dummy.xmin = 0; dummy.xmax = 0; dummy.ymin = 0; dummy.ymax = 0;
+        dummy.conf = -1.0; dummy.xmin = 0; dummy.xmax = 0; dummy.ymin = 0; dummy.ymax = 0; dummy.frame_num = 0;
         BdBox neighbour = dummy;
+        std::vector<BdBox> nb_vec;
 
         // Neighbour search
         if (frame_num != 0) {
             for (std::vector<std::vector<BdBox>>::const_iterator j = bd_box_stack.cbegin(); j != bd_box_stack.cend(); j++) {
-                findNeighbour(*i, *j, neighbour);
-                if (neighbour != dummy) {
-                    break;
-                }
+                findNbVec(*i, *j, nb_vec);
+                if (nb_vec.size() >= threshold::NEIGHBOURS) break;
             }
+            matchNbVec(*i, nb_vec, neighbour);
         }
 
         // Update IDs
         if (neighbour == dummy) {
             // Completely new person
             Person person(*i);
-            i->set_parent(person);
+            i->setParent(person);
             person_vec.push_back(person);
-            uint32_t id = person.get_id();
         }
         else {
             // Person from previous frames
-            Person person = neighbour.get_parent();
-            i->set_parent(person);
-            uint32_t id = person.get_id();
-            person_vec.at(id - 1).add_bd_box(*i);
+            Person person = neighbour.getParent();
+            i->setParent(person);
+            uint32_t id = person.getId();
+            person_vec.at(id - 1).addBdBox(*i);
+            person_vec.at(id - 1).enroll();
         }
+    }
+}
+
+void common::FIFO(const std::vector<BdBox>& bd_box_vec, std::vector<std::vector<BdBox>>& bd_box_stack) {
+    bd_box_stack.insert(bd_box_stack.begin(), bd_box_vec);
+    if (bd_box_stack.size() > threshold::STACK) {
+        bd_box_stack.pop_back();
     }
 }
 
 void common::show(const std::vector<Person>& person_vec, cv::Mat& img_data, uint32_t frame_num) {
     // Counting
-    cv::Scalar color(232, 35, 244);
     std::stringstream s;
     s << "People: " << Person::count;
-    cv::putText(img_data, s.str(), cv::Point2i(50, 50), cv::FONT_HERSHEY_SIMPLEX, 0.75, color);
+    cv::putText(img_data, s.str(), cv::Point2i(50, 50), cv::FONT_HERSHEY_SIMPLEX, 0.75, display::COLOR);
 
     // Bounding boxes
     for (std::vector<Person>::const_iterator i = person_vec.cbegin(); i != person_vec.cend(); i++) {
-        const std::vector<BdBox>* bd_box_vec = i->get_bd_box_vec();
-        for (std::vector<BdBox>::const_iterator j = bd_box_vec->cbegin(); j != bd_box_vec->cend(); j++) {
-            if (j->frame_num == frame_num) {
-                cv::putText(img_data, std::to_string(i->get_id()), cv::Point2i(j->xmin, j->ymin - display::TXT_OFFSET),
-                            cv::FONT_HERSHEY_SIMPLEX, 0.75, color);
-                cv::rectangle(img_data, cv::Point2i(j->xmin, j->ymin), cv::Point2i(j->xmax, j->ymax), color);
+        if (i->isEnrolled()) {
+            const std::vector<BdBox>* bd_box_vec = i->getBdBoxVec();
+            for (std::vector<BdBox>::const_iterator j = bd_box_vec->cbegin(); j != bd_box_vec->cend(); j++) {
+                if (j->frame_num == frame_num) {
+                    srand(i->getId());
+                    uint8_t red = rand() % 255;
+                    uint8_t green = rand() % 255;
+                    uint8_t blue = rand() % 255;
+                    cv::Scalar color(red, green, blue);
+                    cv::putText(img_data, std::to_string(i->getId()), cv::Point2i(j->xmin, j->ymin - display::TXT_OFFSET),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.75, color);
+                    cv::rectangle(img_data, cv::Point2i(j->xmin, j->ymin), cv::Point2i(j->xmax, j->ymax), color, 2);
+                    break;
+                }
             }
         }
     }
 
     // Play
     cv::imshow("Tracker", img_data);
-    cv::waitKey(10);
+    cv::waitKey(1);
 }

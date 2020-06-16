@@ -52,7 +52,10 @@ int main() {
     // INFERENCE LOOP
     /*************************************************************************/
     InferenceEngine::InferRequest infer_req = exec_net.CreateInferRequest();
-    cv::VideoCapture cap = cv::VideoCapture(model::INPUT_VID);
+    cv::VideoCapture vid_reader(model::INPUT_VID);
+    cv::VideoWriter vid_writer(model::OUTPUT_VID, cv::VideoWriter::fourcc('X', 'V', 'I', 'D'), 25.0, cv::Size(960, 540));
+    cv::HOGDescriptor hog_handler(cv::Size(32, 64), cv::Size(16, 16), cv::Size(8, 8), cv::Size(8, 8), 9);
+    // cv::Ptr<cv::ORB> orb_handler = cv::ORB::create(500, 1.2f, 2, 31, 0, 2, cv::ORB::HARRIS_SCORE, 31, 20);
     std::vector<std::vector<BdBox>> bd_box_stack;
     cv::Mat frame_data, net_data;
     std::vector<Person> person_vec;
@@ -64,57 +67,63 @@ int main() {
         // Capture frame
         /*************************************************************************/
         benchmark.start();
-        rc = cap.read(frame_data);
-        if (rc == false) break;
+        rc = vid_reader.read(frame_data);
+        if (rc == false) {
+            vid_reader.release();
+            vid_writer.release();
+            break;
+        }
         if (frame_num == 0) {
             frame_width = frame_data.cols;
             frame_height = frame_data.rows;
         }
-        benchmark.end("capture");
+        // benchmark.end("capture");
         /*************************************************************************/
 
         // Pre-process frame
         /*************************************************************************/
-        benchmark.start();
+        // benchmark.start();
         cv::resize(frame_data, net_data, cv::Size(net_width, net_height));
-        benchmark.end("pre-process");
+        // benchmark.end("pre-process");
         /*************************************************************************/
 
         // Infer
         /*************************************************************************/
-        benchmark.start();
+        // benchmark.start();
         InferenceEngine::Blob::Ptr input_blob = infer_req.GetBlob(model::INPUT_BLOB);
         common::fillBlob(input_blob, net_data);
         infer_req.Infer();
-        benchmark.end("inference");
+        // benchmark.end("inference");
         /*************************************************************************/
 
         // Filter bounding boxes
         /*************************************************************************/
-        benchmark.start();
+        // benchmark.start();
         InferenceEngine::Blob::Ptr output_blob = infer_req.GetBlob(model::OUTPUT_BLOB);
         std::vector<BdBox> bd_box_vec;
         common::getBdBox(output_blob, frame_width, frame_height, frame_num, bd_box_vec);
         common::nonMaxSup(bd_box_vec);
-        benchmark.end("filter");
+        // benchmark.end("filter");
         /*************************************************************************/
 
         // Assign ID
         /*************************************************************************/
-        benchmark.start();
+        // benchmark.start();
+        common::getHOG(bd_box_vec, frame_data, hog_handler);
+        // common::getORB(bd_box_vec, frame_data, orb_handler);
         common::assignID(bd_box_vec, bd_box_stack, frame_num, person_vec);
         common::FIFO(bd_box_vec, bd_box_stack);
-        benchmark.end("assign");
+        // benchmark.end("assign");
         /*************************************************************************/
 
         // Show/store results
         /*************************************************************************/
-        benchmark.start();
+        // benchmark.start();
         common::show(person_vec, frame_data, frame_num);
+        // vid_writer.write(frame_data);
         benchmark.end("show");
         /*************************************************************************/
 
-        std::cout << "frame: " << frame_num << std::endl;
         frame_num++;
     }
     std::cout << "End of program..." << std::endl;

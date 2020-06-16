@@ -4,6 +4,9 @@
 #include <vector>
 #include <cstdint>
 
+// Local modules
+#include "threshold.h"
+
 class BdBox;
 
 class Person {
@@ -11,23 +14,29 @@ class Person {
     private:
         std::vector<BdBox> m_bd_box_vec;
         uint32_t m_id;
+        bool m_enroll;
 
     public:
         // Static member
         static uint32_t count;
+        static uint32_t id;
 
-        // Constructor
+        // Constructors
         Person();
         Person(const BdBox& bd_box);
+
+        // Destructor
         ~Person();
 
         // Getters
-        const std::vector<BdBox>* get_bd_box_vec() const;
-        uint32_t get_id() const;
+        const std::vector<BdBox>* getBdBoxVec() const;
+        uint32_t getId() const;
+        bool isEnrolled() const;
 
         // Setters
-        void add_bd_box(const BdBox& bd_box);
-        void set_id(uint32_t id);
+        void addBdBox(const BdBox& bd_box);
+        void setId(uint32_t id);
+        void enroll();
 };
 
 // Local modules

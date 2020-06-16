@@ -22,10 +22,10 @@ bool BdBox::operator!=(const BdBox& a) const {
     return(rc);
 }
 
-void BdBox::set_parent(Person person) {
+void BdBox::setParent(const Person& person) {
     m_person = person;
 }
 
-Person BdBox::get_parent() const {
+Person BdBox::getParent() const {
     return(m_person);
 }
